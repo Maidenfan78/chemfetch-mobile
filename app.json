@@ -34,7 +34,7 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-barcode-scanner",
+      "expo-camera",
       "expo-web-browser"
     ],
     "experiments": {

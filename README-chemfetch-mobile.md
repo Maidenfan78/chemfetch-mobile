@@ -23,6 +23,8 @@
 * Bing web scraping fallback for product name & size
 * SDS URL detection and auto-association
 * Manual entry support when data is ambiguous
+* Zustand global store for crop/photo state
+* NativeWind (Tailwind) styling with custom color palette
 
 ---
 
@@ -30,7 +32,8 @@
 
 * React Native + [Expo Router](https://expo.github.io/router/)
 * [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for RN)
-* [`@supabase/supabase-js`](https://supabase.com/) client SDK
+* Zustand for global state management
+* `@supabase/supabase-js` client SDK
 * `expo-barcode-scanner`, `expo-camera`, `expo-file-system`
 * TypeScript for type safety
 
@@ -41,19 +44,29 @@
 ```
 chemfetch-mobile/
 ├── app/                         # Expo Router-based screens
-│   ├── index.tsx                # Home screen
-│   ├── barcode.tsx              # Barcode scanning screen
+│   ├── index.tsx                # Scan entry point (redirects to scanner)
+│   ├── home.tsx                 # Home screen
+│   ├── scanner.tsx              # Barcode scanning screen
 │   ├── confirm.tsx              # OCR confirmation screen
+│   ├── results.tsx              # Product & SDS lookup results
 │   └── sds-viewer.tsx           # SDS PDF viewer screen
-├── lib/                         # Shared libraries and API clients
-│   └── supabase.ts              # Supabase client initialization
 ├── components/                  # Reusable UI components
-├── babel.config.js              # Babel configuration
-├── metro.config.js              # Metro + NativeWind configuration
-├── tsconfig.json                # TypeScript configuration
-├── .env                         # Environment variables (not committed)
-├── package.json                 # NPM scripts & dependencies
-└── README.md                    # You are here
+│   ├── CropOverlay.tsx          # Interactive crop handles using PanResponder
+│   └── SizePromptModal.tsx      # Manual input modal for size
+├── lib/                         # Shared libraries and global state
+│   ├── constants.ts             # App-wide constants (e.g. BACKEND_API_URL)
+│   ├── ocr.ts                   # OCR request helper
+│   ├── store.ts                 # Zustand store for photo/crop state
+│   └── supabase.ts              # Supabase client initialization
+├── app/_layout.tsx             # Tab layout config with hidden routes
+├── tailwind.config.js          # NativeWind config with custom colors
+├── global.css                  # Tailwind base styles
+├── tsconfig.json               # TypeScript config
+├── .env                        # Environment variables (not committed)
+├── babel.config.js             # Babel config
+├── metro.config.js             # Metro + NativeWind config
+├── package.json                # NPM scripts & dependencies
+└── README.md                   # You are here
 ```
 
 ---

@@ -44,9 +44,8 @@
 ```
 chemfetch-mobile/
 ├── app/                         # Expo Router-based screens
-│   ├── index.tsx                # Scan entry point (redirects to scanner)
-│   ├── home.tsx                 # Home screen
-│   ├── scanner.tsx              # Barcode scanning screen
+│   ├── index.tsx                # Home screen
+│   ├── barcode.tsx              # Barcode scanning screen
 │   ├── confirm.tsx              # OCR confirmation screen
 │   ├── results.tsx              # Product & SDS lookup results
 │   └── sds-viewer.tsx           # SDS PDF viewer screen
@@ -93,7 +92,7 @@ Create a `.env` file at project root:
 ```env
 SUPABASE_URL=https://your-supabase-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
-BACKEND_API_URL=http://<your-backend-host>:3000
+EXPO_PUBLIC_BACKEND_API_URL=http://<your-backend-host>:3000
 ```
 
 ### 4. Running the App

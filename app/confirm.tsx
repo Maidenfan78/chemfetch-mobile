@@ -2,6 +2,7 @@
 import { CropOverlay } from '@/components/CropOverlay';
 import { SizePromptModal } from '@/components/SizePromptModal';
 import { CropInfo, runOcr } from '@/lib/ocr';
+import { BACKEND_API_URL } from '@/lib/constants';
 import { useConfirmStore } from '@/lib/store';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -92,7 +93,7 @@ export default function Confirm() {
 
   const saveItem = async (finalName: string, finalSize: string) => {
     try {
-      await fetch(`${process.env.EXPO_PUBLIC_BACKEND_API_URL}/confirm`, {
+      await fetch(`${BACKEND_API_URL}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, name: finalName, size: finalSize }),

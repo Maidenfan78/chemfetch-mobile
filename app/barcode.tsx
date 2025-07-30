@@ -38,10 +38,11 @@ export default function BarcodeScanner() {
         Alert.alert('Scan Complete', `Type: ${type}\nData: ${data}`, [
             {
                 text: 'View Results',
-                onPress: () => router.push({
-                    pathname: './results' as const,
-                    params: { code: data },
-                }),
+                onPress: () =>
+                    router.push({
+                        pathname: '/results' as const,
+                        params: { code: data },
+                    }),
             },
             {
                 text: 'Scan Again',

@@ -24,18 +24,20 @@ export default function ResultsScreen() {
       .then((data) => {
         if (data.message) Alert.alert('Info', data.message);
 
+        const prod = data.product ?? data;
+
         setProduct({
           barcode: code,
-          name: data.product?.product_name || '',
-          size: data.product?.contents_size_weight || '',
-          sdsUrl: data.product?.sds_url || '',
+          name: prod.product_name || prod.name || '',
+          size: prod.contents_size_weight || prod.size || '',
+          sdsUrl: prod.sds_url || prod.sdsUrl || '',
         });
 
-        if (!data.product?.sds_url && data.product?.product_name) {
+        if (!prod.sds_url && (prod.product_name || prod.name)) {
           fetch(`${BACKEND_API_URL}/sds-by-name`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: data.product.product_name }),
+            body: JSON.stringify({ name: prod.product_name || prod.name }),
           })
             .then((res) => res.json())
             .then((sds) => {

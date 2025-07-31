@@ -1,12 +1,14 @@
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
+import '../app/global.css';
 
 export default function HomeScreen() {
-  const router = useRouter();
+  const router = useRouter(); 
 
   return (
-    <View className="flex-1 bg-white justify-center items-center px-6">
-      <Text className="text-3xl font-bold mb-3 text-center text-primary">Welcome to ChemFetch</Text>
+    <View className="flex-1 justify-center items-center">
+      <Text className="text-5xl text-light-100font-bold">Welcome! </Text>
       <Text className="text-base text-gray-600 mb-8 text-center">Scan and manage your chemical products</Text>
 
       <Pressable
@@ -22,6 +24,18 @@ export default function HomeScreen() {
       >
         <Text className="text-white text-base font-bold">✍️ Manual Entry</Text>
       </Pressable>
+
+      // in HomeScreen
+<Pressable
+  className="bg-red-500 py-3 px-6 rounded-lg mt-4"
+  onPress={async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  }}
+>
+  <Text className="text-white font-bold text-base">🚪 Log Out</Text>
+</Pressable>
+
     </View>
   );
 }

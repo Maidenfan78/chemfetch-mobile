@@ -1,10 +1,10 @@
 import React from 'react';
 import {
-    Modal,
-    Pressable,
-    Text,
-    TextInput,
-    View,
+  Modal,
+  Pressable,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 interface SizePromptModalProps {

@@ -1,9 +1,10 @@
 // app/confirm.tsx (refactor using Zustand for photo and crop)
 import { CropOverlay } from '@/components/CropOverlay';
 import { SizePromptModal } from '@/components/SizePromptModal';
-import { CropInfo, runOcr } from '@/lib/ocr';
 import { BACKEND_API_URL } from '@/lib/constants';
+import { CropInfo, runOcr } from '@/lib/ocr';
 import { useConfirmStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -91,24 +92,42 @@ export default function Confirm() {
     }
   };
 
-  const saveItem = async (finalName: string, finalSize: string) => {
-    try {
-      await fetch(`${BACKEND_API_URL}/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, name: finalName, size: finalSize }),
-      });
-    } catch (e) {
-      console.error('Save error', e);
-    }
+const saveItem = async (finalName: string, finalSize: string) => {
+  try {
+    // Confirm product info to backend
+    await fetch(`${BACKEND_API_URL}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, name: finalName, size: finalSize }),
+    });
 
-    Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
-      {
-        text: 'OK',
-        onPress: () => router.replace('/'),
-      },
-    ]);
-  };
+    // Get product_id from Supabase
+    const { data: product, error: pErr } = await supabase
+      .from('product')
+      .select('id')
+      .eq('barcode', code)
+      .single();
+
+    if (pErr) throw pErr;
+
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) throw new Error('User not logged in');
+
+    await supabase.from('user_chemical_watch_list').insert({
+      user_id: userId,
+      product_id: product.id,
+    });
+  } catch (e) {
+    console.error('Save error', e);
+  }
+
+  Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
+    { text: 'OK', onPress: () => router.replace('/') },
+  ]);
+};
+
 
   const confirmWithFallback = (n: string, s: string) => {
     if (!s.trim()) {

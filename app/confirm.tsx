@@ -92,43 +92,43 @@ export default function Confirm() {
     }
   };
 
-  const saveItem = async (finalName: string, finalSize: string) => {
-    try {
-      await fetch(`${BACKEND_API_URL}/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, name: finalName, size: finalSize }),
-      });
+const saveItem = async (finalName: string, finalSize: string) => {
+  try {
+    await fetch(`${BACKEND_API_URL}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, name: finalName, size: finalSize }),
+    });
 
-      // Get product_id
-      const { data: product, error: pErr } = await supabase
-        .from('product')
-        .select('id')
-        .eq('barcode', code)
-        .single();
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user.id;
 
-      if (pErr) throw pErr;
+    if (!userId) throw new Error('Not logged in');
 
-      const user = await supabase.auth.getUser();
-      const userId = user.data.user?.id;
+    const { data: product, error: pErr } = await supabase
+      .from('product')
+      .select('id')
+      .eq('barcode', code)
+      .single();
 
-      if (!userId) throw new Error('User not logged in');
+    if (pErr) throw pErr;
 
-      await supabase.from('user_chemical_watch_list').insert({
-        user_id: userId,
-        product_id: product.id,
-      });
-    } catch (e) {
-      console.error('Save error', e);
-    }
+    const { error: insertErr } = await supabase
+      .from('user_chemical_watch_list')
+      .insert({ user_id: userId, product_id: product.id });
 
-    Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
-      {
-        text: 'OK',
-        onPress: () => router.replace('/'),
-      },
-    ]);
-  };
+    if (insertErr) throw insertErr;
+
+    console.log('✅ Added to watch list');
+  } catch (e) {
+    console.error('❌ Save error', e);
+  }
+
+  Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
+    { text: 'OK', onPress: () => router.replace('/') },
+  ]);
+};
+
 
   const confirmWithFallback = (n: string, s: string) => {
     if (!s.trim()) {

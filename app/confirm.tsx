@@ -171,7 +171,7 @@ const saveItem = async (finalName: string, finalSize: string) => {
         ) : (
           <CameraView
             ref={cameraRef}
-            className="flex-1"
+            style={{ flex: 1 }}
             onLayout={(e) => {
               const { width, height } = e.nativeEvent.layout;
               setImageLayout({ width, height });

@@ -6,7 +6,7 @@ import {
 } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, Vibration, View } from 'react-native';
+import { Alert, Pressable, Text, Vibration, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BarcodeScanner() {
@@ -58,7 +58,7 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     <SafeAreaView className="flex-1 bg-black">
       <View className="flex-1">
         <CameraView
-          className="flex-1"
+          style={StyleSheet.absoluteFill}
           onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
           barcodeScannerSettings={{ barcodeTypes: ['ean8', 'ean13'] }}
         />

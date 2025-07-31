@@ -1,4 +1,4 @@
-// app/confirm.tsx (refactor using Zustand for photo and crop)
+// app/confirm.tsx
 import { CropOverlay } from '@/components/CropOverlay';
 import { SizePromptModal } from '@/components/SizePromptModal';
 import { BACKEND_API_URL } from '@/lib/constants';
@@ -92,42 +92,43 @@ export default function Confirm() {
     }
   };
 
-const saveItem = async (finalName: string, finalSize: string) => {
-  try {
-    // Confirm product info to backend
-    await fetch(`${BACKEND_API_URL}/confirm`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, name: finalName, size: finalSize }),
-    });
+  const saveItem = async (finalName: string, finalSize: string) => {
+    try {
+      await fetch(`${BACKEND_API_URL}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, name: finalName, size: finalSize }),
+      });
 
-    // Get product_id from Supabase
-    const { data: product, error: pErr } = await supabase
-      .from('product')
-      .select('id')
-      .eq('barcode', code)
-      .single();
+      // Get product_id
+      const { data: product, error: pErr } = await supabase
+        .from('product')
+        .select('id')
+        .eq('barcode', code)
+        .single();
 
-    if (pErr) throw pErr;
+      if (pErr) throw pErr;
 
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+      const user = await supabase.auth.getUser();
+      const userId = user.data.user?.id;
 
-    if (!userId) throw new Error('User not logged in');
+      if (!userId) throw new Error('User not logged in');
 
-    await supabase.from('user_chemical_watch_list').insert({
-      user_id: userId,
-      product_id: product.id,
-    });
-  } catch (e) {
-    console.error('Save error', e);
-  }
+      await supabase.from('user_chemical_watch_list').insert({
+        user_id: userId,
+        product_id: product.id,
+      });
+    } catch (e) {
+      console.error('Save error', e);
+    }
 
-  Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
-    { text: 'OK', onPress: () => router.replace('/') },
-  ]);
-};
-
+    Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
+      {
+        text: 'OK',
+        onPress: () => router.replace('/'),
+      },
+    ]);
+  };
 
   const confirmWithFallback = (n: string, s: string) => {
     if (!s.trim()) {

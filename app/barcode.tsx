@@ -1,18 +1,21 @@
 import { BACKEND_API_URL } from '@/lib/constants';
+import { useIsFocused } from '@react-navigation/native';
 import {
-    BarcodeScanningResult,
-    CameraView,
-    useCameraPermissions,
+  BarcodeScanningResult,
+  CameraView,
+  useCameraPermissions,
 } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, Text, Vibration, View, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Text, Vibration, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 export default function BarcodeScanner() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const router = useRouter();
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     requestPermission();
@@ -37,7 +40,7 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     .then((json) => {
       console.log('✅ Response from backend:', json);
       const prod = json.product ?? json;
-      router.push({
+      router.replace({
         pathname: '/confirm',
         params: {
           code: data,
@@ -48,18 +51,20 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     })
     .catch((err) => {
       console.error('❌ Backend error:', err);
-      router.push({ pathname: '/confirm', params: { code: data } });
+      router.replace({ pathname: '/confirm', params: { code: data } });
     });
 };
 
   return (
     <SafeAreaView className="flex-1 bg-black">
       <View className="flex-1">
-        <CameraView
-          style={StyleSheet.absoluteFill}
-          onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-          barcodeScannerSettings={{ barcodeTypes: ['ean8', 'ean13'] }}
-        />
+        {isFocused && (
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+            barcodeScannerSettings={{ barcodeTypes: ['ean8', 'ean13'] }}
+          />
+        )}
       </View>
 
       <View className="absolute inset-0 justify-center items-center">

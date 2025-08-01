@@ -6,7 +6,7 @@ import {
 } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, Vibration, View, StyleSheet } from 'react-native';
+import { Pressable, Text, Vibration, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BarcodeScanner() {
@@ -36,22 +36,20 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     .then((res) => res.json())
     .then((json) => {
       console.log('✅ Response from backend:', json);
+      const prod = json.product ?? json;
+      router.push({
+        pathname: '/confirm',
+        params: {
+          code: data,
+          name: prod.product_name || prod.name || '',
+          size: prod.contents_size_weight || prod.size || '',
+        },
+      });
     })
     .catch((err) => {
       console.error('❌ Backend error:', err);
+      router.push({ pathname: '/confirm', params: { code: data } });
     });
-
-  Alert.alert('Scan Complete', `Type: ${type}\nData: ${data}`, [
-    {
-      text: 'View Results',
-      onPress: () =>
-        router.push({
-          pathname: '/results' as const,
-          params: { code: data },
-        }),
-    },
-    { text: 'Scan Again', onPress: () => setScanned(false) },
-  ]);
 };
 
   return (

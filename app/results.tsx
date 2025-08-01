@@ -9,7 +9,6 @@ export default function ResultsScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const setProduct = useProductStore((state) => state.setProduct);
-  const clearProduct = useProductStore((state) => state.clear);
   const product = useProductStore((state) => state);
 
   useEffect(() => {
@@ -53,7 +52,7 @@ export default function ResultsScreen() {
         console.error('Scan fetch error:', err);
         setLoading(false);
       });
-  }, [code]);
+  }, [code, setProduct]);
 
   const shareSds = async () => {
     if (!product.sdsUrl) return;

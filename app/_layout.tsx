@@ -16,7 +16,7 @@ export default function RootLayout() {
     };
 
     checkAuth();
-  }, []);
+  }, [router]);
 
   return (
     <View className="flex-1">

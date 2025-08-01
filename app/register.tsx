@@ -62,7 +62,7 @@ if (error) {
     };
 
     fetchWatchList();
-  }, []);
+  }, [router]);
 
   const openSds = (url: string | null) => {
     if (!url) {

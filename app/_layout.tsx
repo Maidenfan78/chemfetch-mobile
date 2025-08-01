@@ -4,10 +4,9 @@ import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import '../app/global.css';
 
-
 export default function RootLayout() {
   const router = useRouter();
-
+  
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -17,5 +16,11 @@ export default function RootLayout() {
     checkAuth();
   }, []);
 
-  return <Stack />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false, // 👈 Hides header on all screens
+      }}
+    />
+  );
 }

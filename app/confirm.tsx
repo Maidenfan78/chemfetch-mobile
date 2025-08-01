@@ -44,6 +44,7 @@ export default function Confirm() {
 
   const [imageLayout, setImageLayout] = useState({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraAvailable, setCameraAvailable] = useState(true);
 
   const cameraRef = useRef<any>(null);
 
@@ -56,6 +57,24 @@ export default function Confirm() {
   useEffect(() => {
     if (!editOnly) requestPermission();
   }, [editOnly]);
+
+  useEffect(() => {
+    const checkCamera = async () => {
+      if (permission?.granted) {
+        try {
+          const available = await CameraView.isAvailableAsync();
+          setCameraAvailable(available);
+          if (!available) {
+            setError('Camera not available on this device');
+          }
+        } catch (e) {
+          setCameraAvailable(false);
+          setError('Camera not available');
+        }
+      }
+    };
+    checkCamera();
+  }, [permission]);
 
   const getCropInfo = (): CropInfo => ({
     left: Math.round(crop.leftRatio * imageLayout.width),
@@ -70,6 +89,10 @@ export default function Confirm() {
 
   const capture = async () => {
     setError('');
+    if (!cameraAvailable) {
+      Alert.alert('Capture Error', 'No camera available on this device');
+      return;
+    }
     if (!cameraRef.current) {
       setError('Camera not ready');
       Alert.alert('Capture Error', 'Camera not initialized properly');
@@ -164,6 +187,8 @@ export default function Confirm() {
     );
   } else if (!permission?.granted) {
     content = <Text className="text-center mt-10">No camera access</Text>;
+  } else if (!cameraAvailable) {
+    content = <Text className="text-center mt-10">Camera not available</Text>;
   } else if (step === 'photo') {
     content = (
       <View className="flex-1 bg-white">

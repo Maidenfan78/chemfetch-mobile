@@ -1,11 +1,10 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 export default function SdsViewer() {
   const { url = '' } = useLocalSearchParams<{ url?: string }>();
-  const router = useRouter();
 
   if (!url || typeof url !== 'string') {
     return (

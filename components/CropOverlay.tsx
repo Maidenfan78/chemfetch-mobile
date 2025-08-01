@@ -7,7 +7,6 @@ interface CropOverlayProps {
 }
 
 export const CropOverlay = ({ cropBoxStyle }: CropOverlayProps) => {
-  const crop = useConfirmStore((s) => s.crop);
   const setCrop = useConfirmStore((s) => s.setCrop);
 
   const imageLayout = useConfirmStore.getState().photo

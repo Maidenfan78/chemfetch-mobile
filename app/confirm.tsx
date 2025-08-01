@@ -56,7 +56,7 @@ export default function Confirm() {
 
   useEffect(() => {
     if (!editOnly) requestPermission();
-  }, [editOnly]);
+  }, [editOnly, requestPermission]);
 
   useEffect(() => {
     const checkCamera = async () => {
@@ -67,7 +67,7 @@ export default function Confirm() {
           if (!available) {
             setError('Camera not available on this device');
           }
-        } catch (e) {
+        } catch {
           setCameraAvailable(false);
           setError('Camera not available');
         }
@@ -276,5 +276,14 @@ export default function Confirm() {
     );
   }
 
-  return content;
+  return (
+    <>
+      {content}
+      {error ? (
+        <View className="absolute bottom-2 left-0 right-0 items-center">
+          <Text className="text-red-600" testID="error-message">{error}</Text>
+        </View>
+      ) : null}
+    </>
+  );
 }

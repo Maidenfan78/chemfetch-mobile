@@ -19,7 +19,7 @@ export default function BarcodeScanner() {
 
   useEffect(() => {
     requestPermission();
-  }, []);
+  }, [requestPermission]);
 
   if (!permission) return <Text className="text-center p-4">Loading permissions…</Text>;
   if (!permission.granted) return <Text className="text-center p-4">No camera access 🙁</Text>;

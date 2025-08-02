@@ -7,6 +7,7 @@ import { useConfirmStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -47,6 +48,7 @@ export default function Confirm() {
   const [cameraAvailable, setCameraAvailable] = useState(true);
 
   const cameraRef = useRef<any>(null);
+  const isFocused = useIsFocused();
 
   const photo = useConfirmStore((s) => s.photo);
   const crop = useConfirmStore((s) => s.crop);
@@ -60,12 +62,14 @@ export default function Confirm() {
 
   useEffect(() => {
     const checkCamera = async () => {
-      if (permission?.granted) {
+      if (permission?.granted && isFocused) {
         try {
           const available = await CameraView.isAvailableAsync();
           setCameraAvailable(available);
           if (!available) {
             setError('Camera not available on this device');
+          } else {
+            setError('');
           }
         } catch {
           setCameraAvailable(false);
@@ -74,7 +78,7 @@ export default function Confirm() {
       }
     };
     checkCamera();
-  }, [permission]);
+  }, [permission, isFocused]);
 
   const getCropInfo = (): CropInfo => ({
     left: Math.round(crop.leftRatio * imageLayout.width),

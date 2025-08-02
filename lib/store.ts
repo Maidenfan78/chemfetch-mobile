@@ -31,12 +31,10 @@ export const useConfirmStore = create<ConfirmStore>((set) => ({
   clearPhoto: () => set({ photo: null }),
   setCrop: (crop) =>
     set((state) => {
-      const updated =
-        typeof crop === 'function'
-          ? crop(state.crop)
-          : { ...state.crop, ...crop };
+      const partial =
+        typeof crop === 'function' ? crop(state.crop) : crop;
 
-      return { crop: updated as CropRatios }; // ✅ cast ensures TS satisfies the full shape
+      return { crop: { ...state.crop, ...partial } };
     }),
   resetCrop: () => set({ crop: { ...defaultCrop } }),
 }));

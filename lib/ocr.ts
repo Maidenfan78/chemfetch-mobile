@@ -1,4 +1,7 @@
-import { BACKEND_API_URL } from './constants';
+// lib/ocr.ts
+import { Platform } from 'react-native';
+// Pull the URL that was centralised in lib/constants.ts
+import { OCR_API_URL } from './constants';
 
 export interface OcrResult {
   bestName?: string;
@@ -17,18 +20,58 @@ export interface CropInfo {
   photoHeight: number;
 }
 
+/**
+ * Defensive helper – returns parsed JSON when possible and otherwise throws a
+ * useful error that includes the first 120 chars of the unexpected response.
+ */
+async function safeJson(res: Response) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Unexpected response from OCR service (${res.status}): ${text.slice(0, 120)}…`);
+  }
+}
+
+/**
+ * Converts a base-64 string to a Blob that can be appended to FormData.
+ *
+ * ⚠️  React Native's Blob polyfill only supports **string** parts (not
+ *     ArrayBuffers or typed arrays).  Passing the raw binary string keeps us
+ *     within the supported subset and avoids the “Creating blobs from
+ *     ArrayBuffer and ArrayBufferView are not supported” error.
+ */
+function base64ToBlob(base64: string, mime = 'image/jpeg'): Blob {
+  const binary = atob(base64); // binary string
+  return new Blob([binary], { type: mime });
+}
+
 export async function runOcr(imageBase64: string, cropInfo: CropInfo): Promise<OcrResult> {
   try {
-    const res = await fetch(`${BACKEND_API_URL}/ocr`, {
+    // ----- Build multipart/form-data body ----------------------------------
+    const form = new FormData();
+
+    form.append(
+      'image',
+      base64ToBlob(imageBase64),
+      `capture.${Platform.OS === 'ios' ? 'heic' : 'jpg'}`,
+    );
+    form.append('crop', JSON.stringify(cropInfo));
+
+    const res = await fetch(`${OCR_API_URL}/ocr`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageBase64, cropInfo }),
+      body: form,
     });
 
-    const data = await res.json();
+    if (__DEV__) console.info('[OCR] POST', `${OCR_API_URL}/ocr`, res.status);
+
+    if (!res.ok) throw new Error(`OCR request failed with status ${res.status}`);
+
+    const data: any = await safeJson(res);
 
     if (data.error) throw new Error(data.error);
 
+    // ----- Extract best name / size ----------------------------------------
     let bestName = '';
     let bestSize = '';
 
@@ -55,7 +98,7 @@ export async function runOcr(imageBase64: string, cropInfo: CropInfo): Promise<O
 
     return { bestName, bestSize, text: data.text };
   } catch (err: any) {
-    console.error('OCR Error:', err.message);
+    console.error('OCR Error:', err.message || err);
     throw err;
   }
 }

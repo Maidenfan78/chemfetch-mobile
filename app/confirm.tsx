@@ -1,4 +1,3 @@
-// app/confirm.tsx
 import { CropOverlay } from '@/components/CropOverlay';
 import { SizePromptModal } from '@/components/SizePromptModal';
 import { BACKEND_API_URL } from '@/lib/constants';
@@ -6,8 +5,12 @@ import { CropInfo, runOcr } from '@/lib/ocr';
 import { useConfirmStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,61 +28,91 @@ import {
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function Confirm() {
+  // ─────────────────────── navigation & params ───────────────────────
   const router = useRouter();
-  const { name = '', size = '', code = '', editOnly: editOnlyParam = '0' } =
-    useLocalSearchParams<{ name: string; size: string; code: string; editOnly?: string }>();
+  const navigation = useNavigation();
+  const isFocused: boolean = (navigation as any).isFocused?.() ?? true;
+
+  const {
+    name = '',
+    size = '',
+    code = '',
+    editOnly: editOnlyParam = '0',
+  } = useLocalSearchParams<{
+    name: string;
+    size: string;
+    code: string;
+    editOnly?: string;
+  }>();
   const editOnly = editOnlyParam === '1' || editOnlyParam === 'true';
 
+  // ─────────────────────────── camera state ──────────────────────────
   const [permission, requestPermission] = useCameraPermissions();
-  const [step, setStep] = useState<'photo' | 'crop' | 'pick' | 'edit'>('photo');
+  const [cameraAvailable, setCameraAvailable] = useState(true);
+  const [cameraReady, setCameraReady] = useState(false);
+  const cameraRef = useRef<CameraView | null>(null);
+
+  // ─────────────────────────── UI state ──────────────────────────────
+  const [step, setStep] = useState<'photo' | 'crop' | 'pick' | 'edit'>(
+    editOnly ? 'edit' : 'photo',
+  );
   const [ocrResult, setOcrResult] = useState<{ bestName?: string; bestSize?: string }>({});
   const [error, setError] = useState('');
   const [ocrLoading, setOcrLoading] = useState(false);
 
+  // manual edit inputs
   const [manualName, setManualName] = useState(name);
   const [manualSize, setManualSize] = useState(size);
 
+  // prompt when size missing
   const [sizePromptVisible, setSizePromptVisible] = useState(false);
   const [pendingName, setPendingName] = useState('');
   const [pendingSize, setPendingSize] = useState('');
 
+  // image / crop layout helpers
   const [imageLayout, setImageLayout] = useState({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
-  const [cameraReady, setCameraReady] = useState(false);
-  const [cameraAvailable, setCameraAvailable] = useState(true);
 
-  const cameraRef = useRef<any>(null);
-  const isFocused = useIsFocused();
-
+  // ─────────────────────────── zustand store ─────────────────────────
   const photo = useConfirmStore((s) => s.photo);
   const crop = useConfirmStore((s) => s.crop);
   const setPhoto = useConfirmStore((s) => s.setPhoto);
   const clearPhoto = useConfirmStore((s) => s.clearPhoto);
   const resetCrop = useConfirmStore((s) => s.resetCrop);
 
+  // ───────────────────── permissions & availability ──────────────────
   useEffect(() => {
-    if (!editOnly) requestPermission();
-  }, [editOnly, requestPermission]);
+    if (!editOnly && !permission) requestPermission();
+  }, [editOnly, permission, requestPermission]);
 
-  useEffect(() => {
-    const checkCamera = async () => {
-      if (permission?.granted && isFocused) {
-        try {
+  // retry until camera frees up (barcode screen may still be shutting down)
+  useFocusEffect(
+    React.useCallback(() => {
+      let cancelled = false;
+      async function checkCamera(retries = 6) {
+        if (!permission?.granted) return;
+        for (let i = 0; i < retries; i += 1) {
           const available = await CameraView.isAvailableAsync();
-          setCameraAvailable(available);
-          if (!available) {
-            setError('Camera not available on this device');
-          } else {
+          if (cancelled) return;
+          if (available) {
+            setCameraAvailable(true);
             setError('');
+            return;
           }
-        } catch {
+          await new Promise((res) => setTimeout(res, 250));
+        }
+        if (!cancelled) {
           setCameraAvailable(false);
-          setError('Camera not available');
+          setError('Camera still in use – go back and try again');
         }
       }
-    };
-    checkCamera();
-  }, [permission, isFocused]);
+      checkCamera();
+      return () => {
+        cancelled = true;
+      };
+    }, [permission]),
+  );
 
+  // ─────────────────────────── helpers ───────────────────────────────
   const getCropInfo = (): CropInfo => ({
     left: Math.round(crop.leftRatio * imageLayout.width),
     top: Math.round(crop.topRatio * imageLayout.height),
@@ -92,14 +125,12 @@ export default function Confirm() {
   });
 
   const capture = async () => {
-    setError('');
     if (!cameraAvailable) {
-      Alert.alert('Capture Error', 'No camera available on this device');
+      Alert.alert('Capture Error', 'Camera not available');
       return;
     }
     if (!cameraRef.current) {
-      setError('Camera not ready');
-      Alert.alert('Capture Error', 'Camera not initialized properly');
+      Alert.alert('Capture Error', 'Camera not ready');
       return;
     }
     try {
@@ -108,8 +139,6 @@ export default function Confirm() {
       resetCrop();
       setStep('crop');
     } catch (e: any) {
-      console.error('❌ Camera capture failed:', e);
-      setError(e?.message || String(e));
       Alert.alert('Capture Error', e?.message || String(e));
     }
   };
@@ -139,17 +168,15 @@ export default function Confirm() {
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData.session?.user.id;
       if (!userId) throw new Error('Not logged in');
-      const { data: product, error: pErr } = await supabase
+      const { data: product } = await supabase
         .from('product')
         .select('id')
         .eq('barcode', code)
         .single();
-      if (pErr) throw pErr;
-      const { error: insertErr } = await supabase
+      if (!product) throw new Error('Product not found');
+      await supabase
         .from('user_chemical_watch_list')
         .insert({ user_id: userId, product_id: product.id });
-      if (insertErr) throw insertErr;
-      console.log('✅ Added to watch list');
     } catch (e) {
       console.error('❌ Save error', e);
     }
@@ -163,16 +190,37 @@ export default function Confirm() {
       setPendingName(n);
       setPendingSize('');
       setSizePromptVisible(true);
-      return;
+    } else {
+      saveItem(n, s);
     }
-    saveItem(n, s);
   };
 
+  // ───────────────────── permission guard UI ────────────────────────
+  if (!editOnly) {
+    if (!permission) {
+      return (
+        <View className="flex-1 justify-center items-center">
+          <ActivityIndicator />
+        </View>
+      );
+    }
+    if (!permission.granted) {
+      return (
+        <View className="flex-1 justify-center items-center p-6">
+          <Text className="text-center mb-4">We need camera access to capture your SDS label.</Text>
+          <Button title="Grant permission" onPress={requestPermission} />
+        </View>
+      );
+    }
+  }
+
+  // ─────────────────────────── content ──────────────────────────────
   let content: React.ReactNode = null;
 
+  // ───── Edit-only manual entry ─────
   if (editOnly) {
     content = (
-      <View className="flex-1 bg-white justify-center items-center p-6">
+      <View className="flex-1 bg-white p-6 justify-center">
         <Text className="text-lg font-semibold mb-4">Edit Product Details</Text>
         <TextInput
           className="border border-gray-400 rounded-md px-4 py-2 w-full mb-3"
@@ -189,34 +237,31 @@ export default function Confirm() {
         <Button title="Save" onPress={() => confirmWithFallback(manualName, manualSize)} />
       </View>
     );
-  } else if (!permission?.granted) {
-    content = <Text className="text-center mt-10">No camera access</Text>;
-  } else if (!cameraAvailable) {
-    content = <Text className="text-center mt-10">Camera not available</Text>;
-  } else if (step === 'photo') {
+  }
+
+  // ───── Take photo step ─────
+  else if (step === 'photo') {
     content = (
       <View className="flex-1 bg-white">
         {photo ? (
           <Image source={{ uri: photo.uri }} className="flex-1" resizeMode="cover" />
         ) : (
-          <CameraView
-            ref={cameraRef}
-            style={{ flex: 1 }}
-            onLayout={(e: LayoutChangeEvent) => {
-              const { width, height } = e.nativeEvent.layout;
-              console.log('📸 Camera layout:', width, height);
-              setImageLayout({ width, height });
-            }}
-            onCameraReady={() => {
-              console.log('✅ Camera ready');
-              setCameraReady(true);
-            }}
-          />
+          isFocused && cameraAvailable && (
+            <CameraView
+              ref={cameraRef}
+              style={{ flex: 1 }}
+              onLayout={(e: LayoutChangeEvent) => {
+                const { width, height } = e.nativeEvent.layout;
+                setImageLayout({ width, height });
+              }}
+              onCameraReady={() => setCameraReady(true)}
+            />
+          )
         )}
         <View className="absolute bottom-6 left-0 right-0 items-center">
           <Pressable
-            className={`py-3 px-6 rounded-lg ${cameraReady ? 'bg-primary' : 'bg-gray-400'}`}
-            disabled={!cameraReady}
+            className={`py-3 px-6 rounded-lg ${cameraReady || photo ? 'bg-primary' : 'bg-gray-400'}`}
+            disabled={!cameraReady && !photo}
             onPress={() => (photo ? clearPhoto() : capture())}
           >
             <Text className="text-white font-bold text-base">{photo ? 'Retake' : 'Capture'}</Text>
@@ -224,7 +269,10 @@ export default function Confirm() {
         </View>
       </View>
     );
-  } else if (step === 'crop' && photo) {
+  }
+
+  // ───── Crop step ─────
+  else if (step === 'crop' && photo) {
     content = (
       <View className="flex-1 bg-white">
         <Image
@@ -253,7 +301,10 @@ export default function Confirm() {
         </View>
       </View>
     );
-  } else if (step === 'pick') {
+  }
+
+  // ───── Pick result step ─────
+  else if (step === 'pick') {
     content = (
       <View className="flex-1 bg-white p-6 justify-center">
         <Text className="text-center text-lg font-semibold mb-6">Choose the correct product details:</Text>
@@ -280,14 +331,26 @@ export default function Confirm() {
     );
   }
 
-  return (
-    <>
-      {content}
-      {error ? (
-        <View className="absolute bottom-2 left-0 right-0 items-center">
-          <Text className="text-red-600" testID="error-message">{error}</Text>
-        </View>
-      ) : null}
-    </>
-  );
-}
+  // ───── Fallback error / unknown state ─────
+  else {
+    content = (
+      <View className="flex-1 justify-center items-center">
+        <Text>No content</Text>
+      </View>
+    );
+  }
+
+  // ─────────────────────────── render ───────────────────────────────
+return (
+  <>
+    {content}
+    {error ? (
+      <View className="absolute bottom-2 left-0 right-0 items-center">
+        <Text className="text-red-600" testID="error-message">
+          {error}
+        </Text>
+      </View>
+    ) : null}
+  </>
+);
+}      

@@ -8,7 +8,7 @@ import '../app/global.css';
 
 export default function RootLayout() {
   const router = useRouter();
-  
+
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -22,7 +22,7 @@ export default function RootLayout() {
     <View className="flex-1">
       <Stack
         screenOptions={{
-          headerShown: false, // 👈 Hides header on all screens
+          headerShown: false,
         }}
       />
       <BottomBar />

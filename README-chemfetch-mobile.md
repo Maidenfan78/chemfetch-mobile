@@ -18,13 +18,15 @@
 
 ## ✨ Features
 
-* EAN-8 and EAN-13 barcode scanning via `expo-barcode-scanner`
-* OCR integration with Python microservice (PaddleOCR)
-* Bing web scraping fallback for product name & size
+* EAN-8 and EAN-13 barcode scanning via `expo-camera` (CameraView)
+* Manual region cropping for OCR with interactive handles (CropOverlay component)
+* OCR integration through PaddleOCR microservice (via backend proxy)
+* Bing web scraping fallback for product name & size lookup
 * SDS URL detection and auto-association
 * Manual entry support when data is ambiguous
-* Zustand global store for crop/photo state
+* Zustand global store for photo & crop state
 * NativeWind (Tailwind) styling with custom color palette
+* SDS viewing in-app via `react-native-webview`
 
 ---
 
@@ -34,7 +36,9 @@
 * [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for RN)
 * Zustand for global state management
 * `@supabase/supabase-js` client SDK
-* `expo-barcode-scanner`, `expo-camera`, `expo-file-system`
+* `expo-camera` for barcode scanning and capture
+* `expo-router`, `react-native-safe-area-context`, and `@react-navigation/native` for navigation
+* `react-native-webview` for SDS PDF viewing
 * TypeScript for type safety
 
 ---
@@ -46,26 +50,27 @@ chemfetch-mobile/
 ├── app/                         # Expo Router-based screens
 │   ├── index.tsx                # Home screen
 │   ├── barcode.tsx              # Barcode scanning screen
-│   ├── confirm.tsx              # OCR confirmation screen
-│   ├── results.tsx              # Product & SDS lookup results
-│   └── sds-viewer.tsx           # SDS PDF viewer screen
+│   ├── confirm.tsx              # OCR confirmation & manual edit screen
+│   ├── results.tsx              # Product & SDS lookup results screen
+│   ├── register.tsx             # Chemical watch list screen
+│   ├── sds-viewer.tsx           # SDS PDF viewer screen
+│   └── _layout.tsx              # Auth check & bottom tab layout
 ├── components/                  # Reusable UI components
 │   ├── CropOverlay.tsx          # Interactive crop handles using PanResponder
-│   └── SizePromptModal.tsx      # Manual input modal for size
+│   └── SizePromptModal.tsx      # Manual input modal for size/weight
 ├── lib/                         # Shared libraries and global state
-│   ├── constants.ts             # App-wide constants (e.g. BACKEND_API_URL)
+│   ├── constants.ts             # Backend & OCR URLs and host detection
 │   ├── ocr.ts                   # OCR request helper
 │   ├── store.ts                 # Zustand store for photo/crop state
 │   └── supabase.ts              # Supabase client initialization
-├── app/_layout.tsx             # Tab layout config with hidden routes
-├── tailwind.config.js          # NativeWind config with custom colors
-├── global.css                  # Tailwind base styles
-├── tsconfig.json               # TypeScript config
-├── .env                        # Environment variables (not committed)
-├── babel.config.js             # Babel config
-├── metro.config.js             # Metro + NativeWind config
-├── package.json                # NPM scripts & dependencies
-└── README.md                   # You are here
+├── tailwind.config.js           # NativeWind config with custom colors
+├── global.css                   # Tailwind base styles
+├── tsconfig.json                # TypeScript config
+├── babel.config.js              # Babel + Expo Metro config
+├── metro.config.js              # Metro + NativeWind integration
+├── package.json                 # NPM scripts & dependencies
+├── .env                         # Environment variables (not committed)
+└── README.md                    # You are here
 ```
 
 ---
@@ -80,56 +85,49 @@ chemfetch-mobile/
 ### 2. Clone & Install
 
 ```bash
-git clone https://github.com/YOUR_ORG/chemfetch-mobile.git
+git clone https://github.com/Maidenfan78/chemfetch-mobile.git
 cd chemfetch-mobile
 npm install
 ```
 
 ### 3. Environment Variables
 
-Create a `.env` file at project root:
+Create a `.env` file at the project root:
 
 ```env
-SUPABASE_URL=https://your-supabase-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
+# Supabase (must be prefixed EXPO_PUBLIC_ to be exposed to the app)
+EXPO_PUBLIC_SUPABASE_URL=https://your-supabase-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+# Backend API (used for /scan, /confirm, /sds-by-name endpoints)
 EXPO_PUBLIC_BACKEND_API_URL=http://<your-backend-host>:3000
+
+# OCR API (optional; falls back to BACKEND API proxy)
+EXPO_PUBLIC_OCR_API_URL=http://<your-backend-host>:3000
+
+# Dev host override (optional)
+EXPO_PUBLIC_DEV_HOST=<your-local-ip-or-host>
 ```
 
-### 4. Running the App
-
-```bash
-npx expo start --clear
-```
-
-* Scan QR code with Expo Go (Android/iOS)
-* Or press `a`/`i` to launch emulator/device
-
-### 5. Development Tips
-
-* **Type checks:** `npx tsc --noEmit`
-* **Linting:** integrate your preferred ESLint config
-* Clear Metro cache if encountering stale builds: `npx expo start --clear`
+> **Note:** `EXPO_PUBLIC_OCR_API_URL` defaults to `EXPO_PUBLIC_BACKEND_API_URL` if not set.
 
 ---
 
-## 🚀 Deployment
+## 🗄️ Database Schema (Supabase)
 
-* **Mobile App:** Publish via EAS or use Expo Go for testing
-
----
-### The Schema
+```sql
+-- Products master table
 CREATE TABLE product (
   id SERIAL PRIMARY KEY,
-  barcode TEXT NOT NULL,
+  barcode TEXT NOT NULL UNIQUE,
   name TEXT,
+  manufacturer TEXT,
   contents_size_weight TEXT,
   sds_url TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
-  CONSTRAINT unique_barcode UNIQUE (barcode)
+  created_at TIMESTAMPTZ DEFAULT timezone('utc', now())
 );
-user_chemical_watch_list
-Tracks product usage per user (inventory, SDS status, risk info, etc.).
 
+-- Per-user inventory & risk info
 CREATE TABLE user_chemical_watch_list (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -149,10 +147,33 @@ CREATE TABLE user_chemical_watch_list (
   risk_rating TEXT,
   swp_required BOOLEAN,
   comments_swp TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
+  created_at TIMESTAMPTZ DEFAULT timezone('utc', now())
 );
-🔐 Row-Level Security (RLS)
-RLS is enabled for user_chemical_watch_list to ensure users can only access their own chemical records.
+
+ALTER TABLE user_chemical_watch_list ENABLE ROW LEVEL SECURITY;
+```
+
+### 4. Running the App
+
+```bash
+npx expo start --clear
+```
+
+* Scan the QR code with Expo Go (Android/iOS)
+* Or press `a`/`i` to launch on emulator/device
+
+### 5. Development Tips
+
+* **Type checks:** `npx tsc --noEmit`
+* **Linting:** integrate your preferred ESLint config
+* Clear Metro cache if encountering stale builds: `npx expo start --clear`
+
+---
+
+## 🚀 Deployment
+
+* **Mobile App:** Publish via EAS or use Expo Go for internal testing
+
 ---
 
 ## 🪪 License

@@ -218,27 +218,28 @@ export default function Confirm() {
   // ─────────────────────────── content ──────────────────────────────
   let content: React.ReactNode = null;
 
-  // ───── Edit-only manual entry ─────
-  if (editOnly) {
-    content = (
-      <View className="flex-1 bg-white p-6 justify-center">
-        <Text className="text-lg font-semibold mb-4">Edit Product Details</Text>
-        <TextInput
-          className="border border-gray-400 rounded-md px-4 py-2 w-full mb-3"
-          placeholder="Name"
-          value={manualName}
-          onChangeText={setManualName}
-        />
-        <TextInput
-          className="border border-gray-400 rounded-md px-4 py-2 w-full mb-4"
-          placeholder="Size/Weight"
-          value={manualSize}
-          onChangeText={setManualSize}
-        />
-        <Button title="Save" onPress={() => confirmWithFallback(manualName, manualSize)} />
-      </View>
-    );
-  }
+// ───── Edit (manual entry) step ─────
+if (step === 'edit') {
+  content = (
+    <View className="flex-1 bg-white p-6 justify-center">
+      <Text className="text-lg font-semibold mb-4">Edit Product Details</Text>
+      <TextInput
+        className="border border-gray-400 rounded-md px-4 py-2 w-full mb-3"
+        placeholder="Name"
+        value={manualName}
+        onChangeText={setManualName}
+      />
+      <TextInput
+        className="border border-gray-400 rounded-md px-4 py-2 w-full mb-4"
+        placeholder="Size/Weight"
+        value={manualSize}
+        onChangeText={setManualSize}
+      />
+      <Button title="Save" onPress={() => confirmWithFallback(manualName, manualSize)} />
+    </View>
+  );
+}
+
 
   // ───── Take photo step ─────
   else if (step === 'photo') {
@@ -309,14 +310,34 @@ export default function Confirm() {
     content = (
       <View className="flex-1 bg-white p-6 justify-center">
         <Text className="text-center text-lg font-semibold mb-6">Choose the correct product details:</Text>
-        <View className="space-y-4">
+
+        {/* Show barcode/web data */}
+        <View className="border border-gray-300 rounded-lg p-4 mb-4 bg-light-100">
+          <Text className="font-bold text-dark-100 mb-1">📦 Barcode/Web Result</Text>
+          <Text className="text-dark-100">Name: {name || 'N/A'}</Text>
+          <Text className="text-dark-100 mb-2">Size: {size || 'N/A'}</Text>
           <Button title="Use Barcode/Web Result" onPress={() => confirmWithFallback(name, size)} />
+        </View>
+
+        {/* Show OCR data */}
+        <View className="border border-gray-300 rounded-lg p-4 mb-4 bg-light-100">
+          <Text className="font-bold text-dark-100 mb-1">🔍 OCR Result</Text>
+          <Text className="text-dark-100">Name: {ocrResult.bestName || 'N/A'}</Text>
+          <Text className="text-dark-100 mb-2">Size: {ocrResult.bestSize || 'N/A'}</Text>
           <Button
             title="Use OCR Result"
-            onPress={() => confirmWithFallback(ocrResult.bestName || '', ocrResult.bestSize || '')}
+            onPress={() =>
+              confirmWithFallback(ocrResult.bestName || '', ocrResult.bestSize || '')
+            }
           />
-          <Button title="Edit Manually" onPress={() => setStep('edit')} />
         </View>
+
+        {/* Manual fallback */}
+        <View className="mt-4">
+          <Button title="✍️ Edit Manually" onPress={() => setStep('edit')} />
+        </View>
+
+        {/* Prompt for missing size */}
         <SizePromptModal
           visible={sizePromptVisible}
           name={pendingName}
@@ -332,6 +353,7 @@ export default function Confirm() {
     );
   }
 
+
   // ───── Fallback error / unknown state ─────
   else {
     content = (
@@ -342,16 +364,16 @@ export default function Confirm() {
   }
 
   // ─────────────────────────── render ───────────────────────────────
-return (
-  <>
-    {content}
-    {error ? (
-      <View className="absolute bottom-2 left-0 right-0 items-center">
-        <Text className="text-red-600" testID="error-message">
-          {error}
-        </Text>
-      </View>
-    ) : null}
-  </>
-);
+  return (
+    <>
+      {content}
+      {error ? (
+        <View className="absolute bottom-2 left-0 right-0 items-center">
+          <Text className="text-red-600" testID="error-message">
+            {error}
+          </Text>
+        </View>
+      ) : null}
+    </>
+  );
 }      

@@ -134,7 +134,8 @@ export default function Confirm() {
       return;
     }
     try {
-      const pic = await cameraRef.current.takePictureAsync({ base64: true, quality: 1 });
+      const pic = await cameraRef.current.takePictureAsync({ base64: false, quality: 1 });
+      console.debug('[DEBUG][rawPhotoUri]', pic.uri);
       setPhoto(pic);
       resetCrop();
       setStep('crop');
@@ -148,7 +149,7 @@ export default function Confirm() {
     setOcrLoading(true);
     setError('');
     try {
-      const result = await runOcr(photo.base64, getCropInfo());
+      const result = await runOcr(photo.uri, getCropInfo());
       setOcrResult(result);
       setStep('pick');
     } catch (err: any) {

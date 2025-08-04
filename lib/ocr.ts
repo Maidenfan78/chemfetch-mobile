@@ -1,7 +1,8 @@
-// lib/ocr.ts
 import { Platform } from 'react-native';
-// Pull the URL that was centralised in lib/constants.ts
+// Centralised OCR endpoint URL
 import { OCR_API_URL } from './constants';
+// Expo FileSystem for file existence checks
+import * as FileSystem from 'expo-file-system';
 
 export interface OcrResult {
   bestName?: string;
@@ -21,57 +22,77 @@ export interface CropInfo {
 }
 
 /**
- * Defensive helper – returns parsed JSON when possible and otherwise throws a
- * useful error that includes the first 120 chars of the unexpected response.
+ * Helper – parse JSON or throw with a truncated preview of unexpected content
  */
 async function safeJson(res: Response) {
   const text = await res.text();
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Unexpected response from OCR service (${res.status}): ${text.slice(0, 120)}…`);
+    throw new Error(
+      `Unexpected response from OCR service (${res.status}): ${text.slice(0, 120)}…`
+    );
   }
 }
 
 /**
- * Converts a base-64 string to a Blob that can be appended to FormData.
- *
- * ⚠️  React Native's Blob polyfill only supports **string** parts (not
- *     ArrayBuffers or typed arrays).  Passing the raw binary string keeps us
- *     within the supported subset and avoids the “Creating blobs from
- *     ArrayBuffer and ArrayBufferView are not supported” error.
+ * Upload a file URI via multipart/form-data with minimal debug logging
  */
-function base64ToBlob(base64: string, mime = 'image/jpeg'): Blob {
-  const binary = atob(base64); // binary string
-  return new Blob([binary], { type: mime });
-}
+export async function runOcr(
+  imageUri: string,
+  cropInfo: CropInfo
+): Promise<OcrResult> {
+  // Log raw URI for debugging
+  console.debug('[DEBUG][imageUri]', imageUri);
 
-export async function runOcr(imageBase64: string, cropInfo: CropInfo): Promise<OcrResult> {
+  // Check file existence
   try {
-    // ----- Build multipart/form-data body ----------------------------------
-    const form = new FormData();
+    const info = await FileSystem.getInfoAsync(imageUri);
+    console.debug('[DEBUG][file exists]', info.exists);
+  } catch (e) {
+    console.warn('[DEBUG][file] Could not check file', e);
+  }
 
+  try {
+    const form: any = new FormData();
+    console.debug(
+      '[DEBUG][form parts before]',
+      form._parts?.map((p: any[]) => p[0])
+    );
+
+    // Append crop metadata
+    form.append('crop', JSON.stringify(cropInfo));
+
+    // Append image file
+    const fileName = `capture.${Platform.OS === 'ios' ? 'heic' : 'jpg'}`;
     form.append(
       'image',
-      base64ToBlob(imageBase64),
-      `capture.${Platform.OS === 'ios' ? 'heic' : 'jpg'}`,
+      { uri: imageUri, name: fileName, type: 'image/jpeg' },
+      fileName
     );
-    form.append('crop', JSON.stringify(cropInfo));
+
+    console.debug(
+      '[DEBUG][form parts after]',
+      form._parts?.map((p: any[]) => p[0])
+    );
+    console.info('[OCR Debug] Posting to', `${OCR_API_URL}/ocr`);
 
     const res = await fetch(`${OCR_API_URL}/ocr`, {
       method: 'POST',
       body: form,
     });
 
-    if (__DEV__) console.info('[OCR] POST', `${OCR_API_URL}/ocr`, res.status);
-
-    if (!res.ok) throw new Error(`OCR request failed with status ${res.status}`);
+    if (__DEV__) console.info('[OCR] POST status', res.status);
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error('[OCR Debug] Server error body:', errBody);
+      throw new Error(`OCR request failed with status ${res.status}`);
+    }
 
     const data: any = await safeJson(res);
-
     if (data.error) throw new Error(data.error);
 
-    // ----- Extract best name / size ----------------------------------------
+    // Extract bestName and bestSize
     let bestName = '';
     let bestSize = '';
 

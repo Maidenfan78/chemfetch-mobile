@@ -22,9 +22,6 @@ export const BottomBar = () => {
         <Pressable onPress={() => router.replace('/register')} className="flex-1 items-center">
           <Text className="text-sm text-gray-700">Register List</Text>
         </Pressable>
-        <Pressable onPress={() => router.replace('/watchlist')} className="flex-1 items-center">
-          <Text className="text-sm text-gray-700">Watch List</Text>
-        </Pressable>
         <Pressable onPress={handleLogout} className="flex-1 items-center">
           <Text className="text-sm text-gray-700">Logout</Text>
         </Pressable>

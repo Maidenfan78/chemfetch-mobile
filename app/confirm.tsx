@@ -27,6 +27,13 @@ import {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+type OcrPayload = {
+  bestName?: string;
+  bestSize?: string;
+  lines?: string[]; // first OCR lines (optional)
+  confidence?: number; // 0..1 (optional)
+};
+
 export default function Confirm() {
   // ─────────────────────── navigation & params ───────────────────────
   const router = useRouter();
@@ -34,8 +41,8 @@ export default function Confirm() {
   const isFocused: boolean = (navigation as any).isFocused?.() ?? true;
 
   const {
-    name = '',
-    size = '',
+    name: nameParam = '',
+    size: sizeParam = '',
     code = '',
     editOnly: editOnlyParam = '0',
   } = useLocalSearchParams<{
@@ -53,16 +60,25 @@ export default function Confirm() {
   const cameraRef = useRef<CameraView | null>(null);
 
   // ─────────────────────────── UI state ──────────────────────────────
-  const [step, setStep] = useState<'photo' | 'crop' | 'pick' | 'edit'>(
-    editOnly ? 'edit' : 'photo',
+  const [step, setStep] = useState<'photo' | 'crop' | 'pick'>(
+    editOnly ? 'pick' : 'photo',
   );
-  const [ocrResult, setOcrResult] = useState<{ bestName?: string; bestSize?: string }>({});
+  const [ocrResult, setOcrResult] = useState<OcrPayload>({});
   const [error, setError] = useState('');
   const [ocrLoading, setOcrLoading] = useState(false);
 
-  // manual edit inputs
-  const [manualName, setManualName] = useState(name);
-  const [manualSize, setManualSize] = useState(size);
+  // preview values coming from Web (scan/API) and params
+  const [webName, setWebName] = useState(nameParam);
+  const [webSize, setWebSize] = useState(sizeParam);
+
+  // manual inputs (used by Manual panel)
+  const [manualName, setManualName] = useState(nameParam);
+  const [manualSize, setManualSize] = useState(sizeParam);
+
+  // current selection in the 3‑way choice
+  const [choice, setChoice] = useState<'web' | 'ocr' | 'manual'>(
+    webName ? 'web' : 'manual',
+  );
 
   // prompt when size missing
   const [sizePromptVisible, setSizePromptVisible] = useState(false);
@@ -150,8 +166,15 @@ export default function Confirm() {
     setError('');
     try {
       const result = await runOcr(photo.uri, getCropInfo());
-      setOcrResult(result);
+      // result may already include lines[] and confidence
+      setOcrResult({
+        bestName: (result as any).bestName,
+        bestSize: (result as any).bestSize,
+        lines: (result as any).lines ?? [],
+        confidence: (result as any).confidence,
+      });
       setStep('pick');
+      setChoice('ocr');
     } catch (err: any) {
       setError(err.message || 'OCR failed');
     } finally {
@@ -159,41 +182,114 @@ export default function Confirm() {
     }
   };
 
-  const saveItem = async (finalName: string, finalSize: string) => {
+  // Persist product (upsert) and add to user's watch list if possible
+  const persistProduct = async (finalName: string, finalSize: string) => {
     try {
       await fetch(`${BACKEND_API_URL}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, name: finalName, size: finalSize }),
       });
+
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData.session?.user.id;
-      if (!userId) throw new Error('Not logged in');
       const { data: product } = await supabase
         .from('product')
         .select('id')
         .eq('barcode', code)
         .single();
-      if (!product) throw new Error('Product not found');
-      await supabase
-        .from('user_chemical_watch_list')
-        .insert({ user_id: userId, product_id: product.id });
+
+      if (userId && product?.id) {
+        const { error: wlError } = await supabase
+          .from('user_chemical_watch_list')
+          .insert({ user_id: userId, product_id: product.id });
+        if (wlError) {
+          console.warn('watch_list insert skipped:', wlError.message);
+        }
+      }
     } catch (e) {
-      console.error('❌ Save error', e);
+      console.error('❌ Persist error', e);
     }
+  };
+
+  // SDS: search → verify → upsert product.sds_url via Supabase client
+  const searchVerifyAndUpsertSds = async (finalName: string) => {
+    try {
+      const sdsRes = await fetch(`${BACKEND_API_URL}/sds-by-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: finalName }),
+      });
+      const sds = await sdsRes.json();
+      const url: string | undefined = sds.sdsUrl || sds.url;
+      if (!url) return;
+
+      // verify before persisting
+      const verRes = await fetch(`${BACKEND_API_URL}/verify-sds`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, name: finalName }),
+      });
+      const ver = await verRes.json();
+      if (ver?.verified !== false) {
+        const { data: product } = await supabase
+          .from('product')
+          .select('id')
+          .eq('barcode', code)
+          .single();
+        if (product?.id) {
+          await supabase.from('product').update({ sds_url: url }).eq('id', product.id);
+        }
+      }
+    } catch (e) {
+      console.error('SDS lookup/verify failed', e);
+    }
+  };
+
+  const onSubmitChoice = async () => {
+    let finalName = '';
+    let finalSize = '';
+
+    if (choice === 'web') {
+      finalName = webName.trim();
+      finalSize = webSize.trim();
+    } else if (choice === 'ocr') {
+      finalName = (ocrResult.bestName || '').trim();
+      finalSize = (ocrResult.bestSize || '').trim();
+    } else {
+      finalName = manualName.trim();
+      finalSize = manualSize.trim();
+    }
+
+    if (!finalName) {
+      Alert.alert('Missing name', 'Please provide a product name.');
+      return;
+    }
+
+    // if size missing, prompt first
+    if (!finalSize) {
+      setPendingName(finalName);
+      setPendingSize('');
+      setSizePromptVisible(true);
+      return;
+    }
+
+    await persistProduct(finalName, finalSize);
+    await searchVerifyAndUpsertSds(finalName);
+
     Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
       { text: 'OK', onPress: () => router.replace('/') },
     ]);
   };
 
-  const confirmWithFallback = (n: string, s: string) => {
-    if (!s.trim()) {
-      setPendingName(n);
-      setPendingSize('');
-      setSizePromptVisible(true);
-    } else {
-      saveItem(n, s);
-    }
+  const confirmSizeFromPrompt = async () => {
+    const n = pendingName;
+    const s = pendingSize.trim();
+    setSizePromptVisible(false);
+    if (!s) return;
+    await persistProduct(n, s);
+    await searchVerifyAndUpsertSds(n);
+    Alert.alert('Saved', `Name: ${n}\nSize/Weight: ${s}`, [{ text: 'OK', onPress: () => router.replace('/') }]);
   };
 
   // ───────────────────── permission guard UI ────────────────────────
@@ -218,31 +314,8 @@ export default function Confirm() {
   // ─────────────────────────── content ──────────────────────────────
   let content: React.ReactNode = null;
 
-// ───── Edit (manual entry) step ─────
-if (step === 'edit') {
-  content = (
-    <View className="flex-1 bg-white p-6 justify-center">
-      <Text className="text-lg font-semibold mb-4">Edit Product Details</Text>
-      <TextInput
-        className="border border-gray-400 rounded-md px-4 py-2 w-full mb-3"
-        placeholder="Name"
-        value={manualName}
-        onChangeText={setManualName}
-      />
-      <TextInput
-        className="border border-gray-400 rounded-md px-4 py-2 w-full mb-4"
-        placeholder="Size/Weight"
-        value={manualSize}
-        onChangeText={setManualSize}
-      />
-      <Button title="Save" onPress={() => confirmWithFallback(manualName, manualSize)} />
-    </View>
-  );
-}
-
-
   // ───── Take photo step ─────
-  else if (step === 'photo') {
+  if (!editOnly && step === 'photo') {
     content = (
       <View className="flex-1 bg-white">
         {photo ? (
@@ -262,19 +335,27 @@ if (step === 'edit') {
         )}
         <View className="absolute bottom-6 left-0 right-0 items-center">
           <Pressable
-            className={`py-3 px-6 rounded-lg ${cameraReady || photo ? 'bg-primary' : 'bg-gray-400'}`}
+            className={`py-3 px-6 rounded-lg ${photo ? 'bg-primary' : cameraReady ? 'bg-primary' : 'bg-gray-400'}`}
             disabled={!cameraReady && !photo}
             onPress={() => (photo ? clearPhoto() : capture())}
           >
             <Text className="text-white font-bold text-base">{photo ? 'Retake' : 'Capture'}</Text>
           </Pressable>
+          {photo ? (
+            <Pressable
+              className="mt-3 py-3 px-6 rounded-lg bg-accent"
+              onPress={() => setStep('crop')}
+            >
+              <Text className="text-white font-bold text-base">Next: Crop</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     );
   }
 
   // ───── Crop step ─────
-  else if (step === 'crop' && photo) {
+  else if (!editOnly && step === 'crop' && photo) {
     content = (
       <View className="flex-1 bg-white">
         <Image
@@ -298,67 +379,115 @@ if (step === 'edit') {
           {ocrLoading ? (
             <ActivityIndicator size="large" />
           ) : (
-            <Button title="Confirm" onPress={handleOcr} />
+            <Button title="Run OCR" onPress={handleOcr} />
           )}
         </View>
       </View>
     );
   }
 
-  // ───── Pick result step ─────
-  else if (step === 'pick') {
+  // ───── Three‑way choice (Web / OCR / Manual) ─────
+  else {
     content = (
-      <View className="flex-1 bg-white p-6 justify-center">
-        <Text className="text-center text-lg font-semibold mb-6">Choose the correct product details:</Text>
+      <View className="flex-1 bg-white p-6">
+        <Text className="text-center text-lg font-semibold mb-4">Confirm product details</Text>
 
-        {/* Show barcode/web data */}
-        <View className="border border-gray-300 rounded-lg p-4 mb-4 bg-light-100">
-          <Text className="font-bold text-dark-100 mb-1">📦 Barcode/Web Result</Text>
-          <Text className="text-dark-100">Name: {name || 'N/A'}</Text>
-          <Text className="text-dark-100 mb-2">Size: {size || 'N/A'}</Text>
-          <Button title="Use Barcode/Web Result" onPress={() => confirmWithFallback(name, size)} />
+        <View className="flex-col space-y-4">
+          {/* Web panel */}
+          <Pressable
+            onPress={() => setChoice('web')}
+            className={`border rounded-xl p-4 ${choice === 'web' ? 'border-primary bg-blue-50' : 'border-gray-300 bg-light-100'}`}
+          >
+            <Text className="font-bold mb-1">🌐 Web (Item {code || '—'})</Text>
+            <Text className="text-dark-100">Name: {webName || '—'}</Text>
+            <Text className="text-dark-100">Size: {webSize || '—'}</Text>
+            {!webName && (
+              <Text className="text-xs text-gray-500 mt-1">No web result provided. You can pick OCR or Manual.</Text>
+            )}
+          </Pressable>
+
+          {/* OCR panel */}
+          <Pressable
+            onPress={() => setChoice('ocr')}
+            className={`border rounded-xl p-4 ${choice === 'ocr' ? 'border-primary bg-blue-50' : 'border-gray-300 bg-light-100'}`}
+          >
+            <Text className="font-bold mb-1">🧾 OCR</Text>
+            <Text className="text-dark-100">Name: {ocrResult.bestName || '—'}</Text>
+            <Text className="text-dark-100">Size: {ocrResult.bestSize || '—'}</Text>
+            {(ocrResult.lines?.length ?? 0) > 0 && (
+              <Text className="text-xs text-gray-600 mt-1" numberOfLines={2}>
+                {ocrResult.lines!.slice(0, 2).join(' • ')}
+              </Text>
+            )}
+            {typeof ocrResult.confidence === 'number' && (
+              <Text className="text-xs text-gray-500 mt-1">Confidence: {(ocrResult.confidence * 100).toFixed(0)}%</Text>
+            )}
+            {!ocrResult.bestName && (
+              <Text className="text-xs text-gray-500 mt-1">No OCR yet. {photo ? 'Run OCR below.' : 'Capture → Crop → Run OCR.'}</Text>
+            )}
+          </Pressable>
+
+          {/* Manual panel */}
+          <Pressable
+            onPress={() => setChoice('manual')}
+            className={`border rounded-xl p-4 ${choice === 'manual' ? 'border-primary bg-blue-50' : 'border-gray-300 bg-light-100'}`}
+          >
+            <Text className="font-bold mb-2">✍️ Manual</Text>
+            <View className="space-y-2">
+              <TextInput
+                className="border border-gray-300 rounded-md px-3 py-2 text-dark-100 bg-white"
+                placeholder="Product name"
+                value={manualName}
+                onChangeText={setManualName}
+                editable={choice === 'manual'}
+              />
+              <TextInput
+                className="border border-gray-300 rounded-md px-3 py-2 text-dark-100 bg-white"
+                placeholder="Size/weight"
+                value={manualSize}
+                onChangeText={setManualSize}
+                editable={choice === 'manual'}
+              />
+            </View>
+          </Pressable>
         </View>
 
-        {/* Show OCR data */}
-        <View className="border border-gray-300 rounded-lg p-4 mb-4 bg-light-100">
-          <Text className="font-bold text-dark-100 mb-1">🔍 OCR Result</Text>
-          <Text className="text-dark-100">Name: {ocrResult.bestName || 'N/A'}</Text>
-          <Text className="text-dark-100 mb-2">Size: {ocrResult.bestSize || 'N/A'}</Text>
-          <Button
-            title="Use OCR Result"
-            onPress={() =>
-              confirmWithFallback(ocrResult.bestName || '', ocrResult.bestSize || '')
-            }
-          />
+        {/* Actions */}
+        <View className="mt-6 space-y-3">
+          {!editOnly && (
+            <View className="flex-row justify-between">
+              <Pressable
+                className="bg-gray-200 py-3 px-4 rounded-lg flex-1 mr-2"
+                onPress={() => setStep('photo')}
+              >
+                <Text className="text-center text-dark-100 font-semibold">📷 Capture</Text>
+              </Pressable>
+              <Pressable
+                className="bg-gray-200 py-3 px-4 rounded-lg flex-1 ml-2"
+                onPress={() => (photo ? setStep('crop') : Alert.alert('No photo', 'Capture a photo first.'))}
+              >
+                <Text className="text-center text-dark-100 font-semibold">🖼️ Crop / OCR</Text>
+              </Pressable>
+            </View>
+          )}
+
+          <Pressable className="bg-primary py-3 px-4 rounded-lg" onPress={onSubmitChoice}>
+            <Text className="text-center text-white font-bold">Save & Find SDS</Text>
+          </Pressable>
+
+          <Pressable className="bg-gray-300 py-3 px-4 rounded-lg" onPress={() => router.replace('/') }>
+            <Text className="text-center text-dark-100 font-semibold">Cancel</Text>
+          </Pressable>
         </View>
 
-        {/* Manual fallback */}
-        <View className="mt-4">
-          <Button title="✍️ Edit Manually" onPress={() => setStep('edit')} />
-        </View>
-
-        {/* Prompt for missing size */}
         <SizePromptModal
           visible={sizePromptVisible}
           name={pendingName}
           size={pendingSize}
           onChangeSize={setPendingSize}
-          onSave={() => {
-            setSizePromptVisible(false);
-            saveItem(pendingName, pendingSize.trim());
-          }}
+          onSave={confirmSizeFromPrompt}
           onCancel={() => setSizePromptVisible(false)}
         />
-      </View>
-    );
-  }
-
-
-  // ───── Fallback error / unknown state ─────
-  else {
-    content = (
-      <View className="flex-1 justify-center items-center">
-        <Text>No content</Text>
       </View>
     );
   }
@@ -376,4 +505,4 @@ if (step === 'edit') {
       ) : null}
     </>
   );
-}      
+}

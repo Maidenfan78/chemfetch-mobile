@@ -6,23 +6,23 @@
 
 ## 🔗 Related Repositories
 
-| Repo                 | Purpose                                                     |
-| -------------------- | ----------------------------------------------------------- |
-| **chemfetch-mobile** | **(This repo)** Expo app for barcode scanning & SDS capture |
-| chemfetch-client-hub | Web dashboard for chemical register management              |
-| chemfetch-admin-hub  | Internal admin panel for support                            |
-| chemfetch-backend    | Node.js API server for OCR, scraping, and SDS logic         |
-| chemfetch-supabase   | Supabase migrations, schema, and SQL types                  |
+| Repo                 | Purpose                                                       |
+| -------------------- | ------------------------------------------------------------- |
+| **chemfetch-mobile** | **(This repo)** Expo app for barcode scanning & SDS capture   |
+| chemfetch-client-hub | Web dashboard for chemical register management                |
+| chemfetch-admin-hub  | Internal admin panel for support                              |
+| chemfetch-backend    | Node.js API server for OCR, AU-biased scraping, and SDS logic |
+| chemfetch-supabase   | Supabase migrations, schema, and SQL types                    |
 
 ---
 
 ## ✨ Features
 
 * EAN-8 and EAN-13 barcode scanning via `expo-camera` (CameraView)
-* Manual region cropping for OCR with interactive handles (CropOverlay component)
-* OCR integration through PaddleOCR microservice (via backend proxy)
-* Bing web scraping fallback for product name & size lookup
-* SDS URL detection and auto-association
+* AU-biased web scraping for product name/size lookup (`"Item {barcode}"`)
+* OCR fallback via PaddleOCR microservice (backend proxy)
+* Confirm Screen with **Web**, **OCR**, and **Manual** options
+* SDS search (`"{name} sds"`) and verification for product name + SDS keywords
 * Manual entry support when data is ambiguous
 * Zustand global store for photo & crop state
 * NativeWind (Tailwind) styling with custom color palette
@@ -30,14 +30,44 @@
 
 ---
 
+## 📋 Workflow Overview (Mobile Perspective)
+
+1. **Scan Barcode** → call `/scan`.
+2. If DB hit → show product instantly.
+3. If DB miss → backend runs AU-biased `"Item {barcode}"` search.
+4. Backend may return Web candidate + request OCR capture in parallel.
+5. Show Confirm Screen with Web, OCR, Manual options.
+6. User selects one → `/confirm` is called.
+7. If SDS missing → trigger `/sds-by-name` → `/verify-sds`.
+8. Update chemical register with verified SDS URL.
+
+---
+
+## 📋 Confirm Screen Contract
+
+The Confirm screen must:
+
+1. Display **three options** side-by-side:
+
+   * **Web Candidate**: name + size from AU-biased scrape
+   * **OCR Candidate**: first lines from OCR text with confidence %
+   * **Manual Entry**: empty name + size inputs
+2. Allow the user to pick exactly one option.
+3. On submission:
+
+   * POST to `/confirm` with `barcode`, `name`, and optional `size`.
+   * If SDS URL not yet known, trigger `/sds-by-name` → then `/verify-sds`.
+4. Update local state and chemical register once backend confirms SDS URL.
+
+---
+
 ## 🛠️ Tech Stack
 
 * React Native + [Expo Router](https://expo.github.io/router/)
-* [NativeWind](https://www.nativewind.dev/) (Tailwind CSS for RN)
+* [NativeWind](https://www.nativewind.dev/)
 * Zustand for global state management
 * `@supabase/supabase-js` client SDK
 * `expo-camera` for barcode scanning and capture
-* `expo-router`, `react-native-safe-area-context`, and `@react-navigation/native` for navigation
 * `react-native-webview` for SDS PDF viewing
 * TypeScript for type safety
 
@@ -47,30 +77,30 @@
 
 ```
 chemfetch-mobile/
-├── app/                         # Expo Router-based screens
-│   ├── index.tsx                # Home screen
-│   ├── barcode.tsx              # Barcode scanning screen
-│   ├── confirm.tsx              # OCR confirmation & manual edit screen
-│   ├── results.tsx              # Product & SDS lookup results screen
-│   ├── register.tsx             # Chemical watch list screen
-│   ├── sds-viewer.tsx           # SDS PDF viewer screen
-│   └── _layout.tsx              # Auth check & bottom tab layout
-├── components/                  # Reusable UI components
-│   ├── CropOverlay.tsx          # Interactive crop handles using PanResponder
-│   └── SizePromptModal.tsx      # Manual input modal for size/weight
-├── lib/                         # Shared libraries and global state
-│   ├── constants.ts             # Backend & OCR URLs and host detection
-│   ├── ocr.ts                   # OCR request helper
-│   ├── store.ts                 # Zustand store for photo/crop state
-│   └── supabase.ts              # Supabase client initialization
-├── tailwind.config.js           # NativeWind config with custom colors
-├── global.css                   # Tailwind base styles
-├── tsconfig.json                # TypeScript config
-├── babel.config.js              # Babel + Expo Metro config
-├── metro.config.js              # Metro + NativeWind integration
-├── package.json                 # NPM scripts & dependencies
-├── .env                         # Environment variables (not committed)
-└── README.md                    # You are here
+├── app/
+│   ├── index.tsx
+│   ├── barcode.tsx
+│   ├── confirm.tsx
+│   ├── results.tsx
+│   ├── register.tsx
+│   ├── sds-viewer.tsx
+│   └── _layout.tsx
+├── components/
+│   ├── CropOverlay.tsx
+│   └── SizePromptModal.tsx
+├── lib/
+│   ├── constants.ts
+│   ├── ocr.ts
+│   ├── store.ts
+│   └── supabase.ts
+├── tailwind.config.js
+├── global.css
+├── tsconfig.json
+├── babel.config.js
+├── metro.config.js
+├── package.json
+├── .env
+└── README.md
 ```
 
 ---
@@ -92,96 +122,42 @@ npm install
 
 ### 3. Environment Variables
 
-Create a `.env` file at the project root:
-
 ```env
-# Supabase (must be prefixed EXPO_PUBLIC_ to be exposed to the app)
 EXPO_PUBLIC_SUPABASE_URL=https://your-supabase-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-
-# Backend API (used for /scan, /confirm, /sds-by-name endpoints)
 EXPO_PUBLIC_BACKEND_API_URL=http://<your-backend-host>:3000
-
-# OCR API (optional; falls back to BACKEND API proxy)
 EXPO_PUBLIC_OCR_API_URL=http://<your-backend-host>:3000
-
-# Dev host override (optional)
 EXPO_PUBLIC_DEV_HOST=<your-local-ip-or-host>
 ```
-
-> **Note:** `EXPO_PUBLIC_OCR_API_URL` defaults to `EXPO_PUBLIC_BACKEND_API_URL` if not set.
 
 ---
 
 ## 🗄️ Database Schema (Supabase)
 
 ```sql
--- Products master table
-CREATE TABLE product (
-  id SERIAL PRIMARY KEY,
-  barcode TEXT NOT NULL UNIQUE,
-  name TEXT,
-  manufacturer TEXT,
-  contents_size_weight TEXT,
-  sds_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT timezone('utc', now())
-);
-
--- Per-user inventory & risk info
-CREATE TABLE user_chemical_watch_list (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  product_id INTEGER REFERENCES product(id) ON DELETE CASCADE,
-  quantity_on_hand INTEGER,
-  location TEXT,
-  sds_available BOOLEAN,
-  sds_issue_date DATE,
-  hazardous_substance BOOLEAN,
-  dangerous_good BOOLEAN,
-  dangerous_goods_class TEXT,
-  description TEXT,
-  packing_group TEXT,
-  subsidiary_risks TEXT,
-  consequence TEXT,
-  likelihood TEXT,
-  risk_rating TEXT,
-  swp_required BOOLEAN,
-  comments_swp TEXT,
-  created_at TIMESTAMPTZ DEFAULT timezone('utc', now())
-);
-
+CREATE TABLE product (...);
+CREATE TABLE user_chemical_watch_list (...);
 ALTER TABLE user_chemical_watch_list ENABLE ROW LEVEL SECURITY;
 ```
 
-### 4. Running the App
+---
+
+## 🚀 Running the App
 
 ```bash
 npx expo start --clear
 ```
 
-* Scan the QR code with Expo Go (Android/iOS)
-* Or press `a`/`i` to launch on emulator/device
-
-### 5. Development Tips
-
-* **Type checks:** `npx tsc --noEmit`
-* **Linting:** integrate your preferred ESLint config
-* Clear Metro cache if encountering stale builds: `npx expo start --clear`
-
----
-
-## 🚀 Deployment
-
-* **Mobile App:** Publish via EAS or use Expo Go for internal testing
+Scan QR with Expo Go or launch on emulator/device.
 
 ---
 
 ## 🪪 License
 
-MIT (or custom license as needed)
+MIT (or custom)
 
 ---
 
 ## 🙋 Support
 
-For issues or onboarding, contact the project maintainer.
+Contact project maintainer for issues or onboarding.

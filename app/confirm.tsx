@@ -98,6 +98,21 @@ export default function Confirm() {
   const clearPhoto = useConfirmStore((s) => s.clearPhoto);
   const resetCrop = useConfirmStore((s) => s.resetCrop);
 
+  // Clear previous photo and reset state when a new code is provided
+  useEffect(() => {
+    clearPhoto();
+    resetCrop();
+    setStep(editOnly ? 'pick' : 'photo');
+  }, [code, editOnly, clearPhoto, resetCrop]);
+
+  // Ensure photo is cleared when leaving this screen
+  useEffect(() => {
+    return () => {
+      clearPhoto();
+      resetCrop();
+    };
+  }, [clearPhoto, resetCrop]);
+
   // ───────────────────── permissions & availability ──────────────────
   useEffect(() => {
     if (!editOnly && !permission) requestPermission();
@@ -335,17 +350,24 @@ export default function Confirm() {
         {photo ? (
           <Image source={{ uri: photo.uri }} className="flex-1" resizeMode="cover" />
         ) : (
-          isFocused && cameraAvailable && (
-            <CameraView
-              ref={cameraRef}
-              style={{ flex: 1 }}
-              onLayout={(e: LayoutChangeEvent) => {
-                const { width, height } = e.nativeEvent.layout;
-                setImageLayout({ width, height });
-              }}
-              onCameraReady={() => setCameraReady(true)}
-            />
-          )
+          <>
+            {isFocused && cameraAvailable && (
+              <CameraView
+                ref={cameraRef}
+                style={{ flex: 1 }}
+                onLayout={(e: LayoutChangeEvent) => {
+                  const { width, height } = e.nativeEvent.layout;
+                  setImageLayout({ width, height });
+                }}
+                onCameraReady={() => setCameraReady(true)}
+              />
+            )}
+            <View className="absolute inset-0 justify-center items-center pointer-events-none">
+              <View className="w-[90%] h-48 border-4 border-white rounded-xl bg-white/10 relative">
+                <View className="absolute top-1/2 left-0 right-0 h-0.5 bg-white" />
+              </View>
+            </View>
+          </>
         )}
         <View className="absolute bottom-6 left-0 right-0 items-center">
           <Pressable

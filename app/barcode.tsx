@@ -51,7 +51,7 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
       console.log('✅ Response from backend:', json);
       const prod = json.product ?? json;
       router.replace({
-        pathname: '/confirm',
+        pathname: '/ocr-info',
         params: {
           code: data,
           name: prod.product_name || prod.name || '',
@@ -61,7 +61,7 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     })
     .catch((err) => {
       console.error('❌ Backend error:', err);
-      router.replace({ pathname: '/confirm', params: { code: data } });
+      router.replace({ pathname: '/ocr-info', params: { code: data } });
     })
     .finally(() => setLoading(false));
 };

@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -67,38 +68,44 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
 
   return (
     <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-1">
-        {isFocused && (
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-            barcodeScannerSettings={{ barcodeTypes: ['ean8', 'ean13'] }}
+      {loading ? (
+        <View className="flex-1 justify-center items-center bg-black">
+          <Image
+            source={require('@/assets/images/splash-icon.png')}
+            className="w-32 h-32 mb-4"
           />
-        )}
-      </View>
-
-      <View className="absolute inset-0 justify-center items-center">
-        <View className="w-[70%] h-48 border-4 border-white rounded-xl bg-white/10 justify-center items-center">
-          <Text className="text-white font-bold text-base text-center px-4">
-            Align barcode here
-          </Text>
-        </View>
-      </View>
-
-      {scanned && (
-        <Pressable
-          className="absolute bottom-10 self-center bg-primary py-3 px-6 rounded-lg"
-          onPress={() => setScanned(false)}
-        >
-          <Text className="text-white text-base font-bold">Scan Again</Text>
-        </Pressable>
-      )}
-
-      {loading && (
-        <View className="absolute inset-0 bg-black/40 justify-center items-center">
           <ActivityIndicator size="large" color="#fff" />
           <Text className="text-white mt-2">Searching...</Text>
         </View>
+      ) : (
+        <>
+          <View className="flex-1">
+            {isFocused && (
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+                barcodeScannerSettings={{ barcodeTypes: ['ean8', 'ean13'] }}
+              />
+            )}
+          </View>
+
+          <View className="absolute inset-0 justify-center items-center">
+            <View className="w-[70%] h-48 border-4 border-white rounded-xl bg-white/10 justify-center items-center">
+              <Text className="text-white font-bold text-base text-center px-4">
+                Align barcode here
+              </Text>
+            </View>
+          </View>
+
+          {scanned && (
+            <Pressable
+              className="absolute bottom-10 self-center bg-primary py-3 px-6 rounded-lg"
+              onPress={() => setScanned(false)}
+            >
+              <Text className="text-white text-base font-bold">Scan Again</Text>
+            </Pressable>
+          )}
+        </>
       )}
     </SafeAreaView>
   );

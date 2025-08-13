@@ -1,8 +1,9 @@
 import * as FileSystem from 'expo-file-system';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, Text, View } from 'react-native';
 
 export default function SdsViewer() {
   const { url = '' } = useLocalSearchParams<{ url?: string }>();
@@ -49,9 +50,25 @@ export default function SdsViewer() {
     if (!localPdfUri) return;
 
     try {
-      await Linking.openURL(localPdfUri);
+      if (Platform.OS === 'android') {
+        // Convert file:/// to content:// and grant read permission
+        const contentUri = await FileSystem.getContentUriAsync(localPdfUri);
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+          type: 'application/pdf',
+        });
+      } else {
+        // iOS: Linking works, or use share sheet/browser as fallback
+        try {
+          await Linking.openURL(localPdfUri);
+        } catch {
+          await FileSystem.getContentUriAsync(localPdfUri); // no-op but keeps parity
+          Alert.alert('Open PDF', 'If this does not open, try the Share button or view in-app.');
+        }
+      }
     } catch (e) {
-      Alert.alert('Error', 'Unable to open PDF. Try using a file manager or download again.');
+      Alert.alert('Error', 'Unable to open PDF externally. This viewer requires a PDF app.');
       console.error('❌ Failed to open PDF externally', e);
     }
   };

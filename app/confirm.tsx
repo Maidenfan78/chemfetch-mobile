@@ -85,6 +85,10 @@ export default function Confirm() {
   const [pendingName, setPendingName] = useState('');
   const [pendingSize, setPendingSize] = useState('');
 
+  // saving feedback
+  const [saving, setSaving] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+
   // image / crop layout helpers
   const [imageLayout, setImageLayout] = useState({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
 
@@ -274,12 +278,18 @@ export default function Confirm() {
       return;
     }
 
-    await persistProduct(finalName, finalSize);
-    await searchVerifyAndUpsertSds(finalName);
-
-    Alert.alert('Saved', `Name: ${finalName}\nSize/Weight: ${finalSize}`, [
-      { text: 'OK', onPress: () => router.replace('/') },
-    ]);
+    try {
+      setSaving(true);
+      await persistProduct(finalName, finalSize);
+      await searchVerifyAndUpsertSds(finalName);
+      setShowSaved(true);
+      setTimeout(() => {
+        setShowSaved(false);
+        router.replace('/');
+      }, 1000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const confirmSizeFromPrompt = async () => {
@@ -287,9 +297,18 @@ export default function Confirm() {
     const s = pendingSize.trim();
     setSizePromptVisible(false);
     if (!s) return;
-    await persistProduct(n, s);
-    await searchVerifyAndUpsertSds(n);
-    Alert.alert('Saved', `Name: ${n}\nSize/Weight: ${s}`, [{ text: 'OK', onPress: () => router.replace('/') }]);
+    try {
+      setSaving(true);
+      await persistProduct(n, s);
+      await searchVerifyAndUpsertSds(n);
+      setShowSaved(true);
+      setTimeout(() => {
+        setShowSaved(false);
+        router.replace('/');
+      }, 1000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ───────────────────── permission guard UI ────────────────────────
@@ -496,6 +515,19 @@ export default function Confirm() {
   return (
     <>
       {content}
+      {saving && (
+        <View className="absolute inset-0 bg-black/40 justify-center items-center">
+          <ActivityIndicator size="large" color="#fff" />
+          <Text className="text-white mt-2">Saving...</Text>
+        </View>
+      )}
+      {showSaved && (
+        <View className="absolute top-4 left-0 right-0 items-center">
+          <View className="bg-green-600 px-4 py-2 rounded-lg">
+            <Text className="text-white font-semibold">Item saved</Text>
+          </View>
+        </View>
+      )}
       {error ? (
         <View className="absolute bottom-2 left-0 right-0 items-center">
           <Text className="text-red-600" testID="error-message">

@@ -393,7 +393,24 @@ export default function Confirm() {
           {ocrLoading ? (
             <ActivityIndicator size="large" />
           ) : (
-            <Button title="Run OCR" onPress={handleOcr} />
+            <View className="flex-row space-x-4">
+              <Pressable
+                className="bg-gray-200 py-3 px-6 rounded-lg"
+                onPress={() => {
+                  clearPhoto();
+                  resetCrop();
+                  setStep('photo');
+                }}
+              >
+                <Text className="text-dark-100 font-bold">Retake</Text>
+              </Pressable>
+              <Pressable
+                className="bg-primary py-3 px-6 rounded-lg"
+                onPress={handleOcr}
+              >
+                <Text className="text-white font-bold">Run OCR</Text>
+              </Pressable>
+            </View>
           )}
         </View>
       </View>

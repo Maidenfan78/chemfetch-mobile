@@ -68,8 +68,8 @@ export default function Confirm() {
   const [ocrLoading, setOcrLoading] = useState(false);
 
   // preview values coming from Web (scan/API) and params
-  const [webName, setWebName] = useState(nameParam);
-  const [webSize, setWebSize] = useState(sizeParam);
+  const [webName] = useState(nameParam);
+  const [webSize] = useState(sizeParam);
 
   // manual inputs (used by Manual panel)
   const [manualName, setManualName] = useState(nameParam);
@@ -87,7 +87,6 @@ export default function Confirm() {
 
   // saving feedback
   const [saving, setSaving] = useState(false);
-  const [showSaved, setShowSaved] = useState(false);
 
   // image / crop layout helpers
   const [imageLayout, setImageLayout] = useState({ width: SCREEN_WIDTH, height: SCREEN_HEIGHT });
@@ -281,12 +280,10 @@ export default function Confirm() {
     try {
       setSaving(true);
       await persistProduct(finalName, finalSize);
-      await searchVerifyAndUpsertSds(finalName);
-      setShowSaved(true);
-      setTimeout(() => {
-        setShowSaved(false);
-        router.replace('/');
-      }, 1000);
+      searchVerifyAndUpsertSds(finalName).catch((e) =>
+        console.error('SDS lookup failed', e),
+      );
+      router.replace('/register');
     } finally {
       setSaving(false);
     }
@@ -300,12 +297,10 @@ export default function Confirm() {
     try {
       setSaving(true);
       await persistProduct(n, s);
-      await searchVerifyAndUpsertSds(n);
-      setShowSaved(true);
-      setTimeout(() => {
-        setShowSaved(false);
-        router.replace('/');
-      }, 1000);
+      searchVerifyAndUpsertSds(n).catch((e) =>
+        console.error('SDS lookup failed', e),
+      );
+      router.replace('/register');
     } finally {
       setSaving(false);
     }
@@ -515,17 +510,16 @@ export default function Confirm() {
   return (
     <>
       {content}
+      {ocrLoading && (
+        <View className="absolute inset-0 bg-black/40 justify-center items-center">
+          <ActivityIndicator size="large" color="#fff" />
+          <Text className="text-white mt-2">Processing...</Text>
+        </View>
+      )}
       {saving && (
         <View className="absolute inset-0 bg-black/40 justify-center items-center">
           <ActivityIndicator size="large" color="#fff" />
           <Text className="text-white mt-2">Saving...</Text>
-        </View>
-      )}
-      {showSaved && (
-        <View className="absolute top-4 left-0 right-0 items-center">
-          <View className="bg-green-600 px-4 py-2 rounded-lg">
-            <Text className="text-white font-semibold">Item saved</Text>
-          </View>
         </View>
       )}
       {error ? (

@@ -7,13 +7,21 @@ import {
 } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, Vibration, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  Vibration,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 export default function BarcodeScanner() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
   const isFocused = useIsFocused();
 
@@ -28,6 +36,7 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
   console.log('🔍 Barcode scanned:', { type, data });
 
   setScanned(true);
+  setLoading(true);
   Vibration.vibrate(100);
 
   console.log('📡 Sending scan to backend...');
@@ -52,7 +61,8 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     .catch((err) => {
       console.error('❌ Backend error:', err);
       router.replace({ pathname: '/confirm', params: { code: data } });
-    });
+    })
+    .finally(() => setLoading(false));
 };
 
   return (
@@ -82,6 +92,13 @@ const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
         >
           <Text className="text-white text-base font-bold">Scan Again</Text>
         </Pressable>
+      )}
+
+      {loading && (
+        <View className="absolute inset-0 bg-black/40 justify-center items-center">
+          <ActivityIndicator size="large" color="#fff" />
+          <Text className="text-white mt-2">Searching...</Text>
+        </View>
       )}
     </SafeAreaView>
   );

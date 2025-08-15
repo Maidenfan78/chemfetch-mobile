@@ -11,7 +11,6 @@ interface WatchItem {
     contents_size_weight: string;
     sds_url: string | null;
   };
-  sds_available: boolean;
   sds_issue_date: string | null;
 }
 
@@ -39,7 +38,6 @@ const { data, error } = await supabase
   .from('user_chemical_watch_list')
   .select(`
     id,
-    sds_available,
     sds_issue_date,
     product (
       name,
@@ -93,7 +91,7 @@ if (error) {
             <View className="border border-gray-200 rounded-xl p-4 mb-4 bg-light-100">
               <Text className="font-bold text-lg text-dark-100">{item.product.name}</Text>
               <Text className="text-dark-100">Size: {item.product.contents_size_weight || 'N/A'}</Text>
-              <Text className="text-dark-100">SDS Available: {item.sds_available ? '✅' : '❌'}</Text>
+              <Text className="text-dark-100">SDS Available: {item.product.sds_url ? '✅' : '❌'}</Text>
 
               <Pressable
                 onPress={() => openSds(item.product.sds_url)}

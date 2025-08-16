@@ -23,7 +23,18 @@ const SCAN_CONFIRMATIONS = 2;     // how many identical reads required
 const SCAN_WINDOW_MS = 1200;      // time window to accumulate confirmations
 const RESCAN_COOLDOWN_MS = 1200;  // how long before allowing another scan
 
-// ------- Checksum validators -------
+// ================================================================
+// Checksum validators & normalizers for common retail symbologies
+// We normalize to a canonical GTIN when possible:
+//  - EAN-13 => GTIN-13 (as-is)
+//  - UPC-A (12) => prepend '0' -> GTIN-13
+//  - UPC-E (8) => expand to UPC-A then prepend '0' -> GTIN-13
+//  - EAN-8 => GTIN-8 (as-is)
+//  - ITF-14 => GTIN-14 (as-is)
+// Code128/Code39/Code93 may encode a GTIN; if the payload is purely
+// digits with a valid length/checksum, we use it. Otherwise ignored.
+// ================================================================
+
 function isValidEAN8(code: string): boolean {
   if (!/^\d{8}$/.test(code)) return false;
   const d = code.split('').map(Number);
@@ -43,9 +54,91 @@ function isValidEAN13(code: string): boolean {
   return check === d[12];
 }
 
-function looksLikeSupportedEAN(code: string): boolean {
-  return (code.length === 8 && isValidEAN8(code)) ||
-         (code.length === 13 && isValidEAN13(code));
+function isValidUPCA(code: string): boolean {
+  if (!/^\d{12}$/.test(code)) return false;
+  const d = code.split('').map(Number);
+  let sum = 0;
+  // positions 0,2,4,6,8,10 weighted by 3; 1,3,5,7,9,11 by 1 (but 11 is check)
+  for (let i = 0; i < 11; i++) sum += d[i] * (i % 2 === 0 ? 3 : 1);
+  const check = (10 - (sum % 10)) % 10;
+  return check === d[11];
+}
+
+// Expand UPC-E (NS 0/1) to UPC-A (per GS1 rules). Returns null if invalid.
+function expandUPCEtoUPCA(upce: string): string | null {
+  if (!/^\d{8}$/.test(upce)) return null;
+  const d = upce.split('').map(Number);
+  const numberSystem = d[0];
+  const checkDigit = d[7];
+  if (numberSystem !== 0 && numberSystem !== 1) return null; // only NS 0/1 supported here
+  const mfr = `${d[1]}${d[2]}${d[3]}`;
+  const prod = `${d[4]}${d[5]}${d[6]}`;
+  let upcaBody = '';
+  switch (d[6]) {
+    case 0:
+    case 1:
+    case 2:
+      // MFG: M1 M2 R6, PROD: 0000 R4 R5
+      upcaBody = `${numberSystem}${d[1]}${d[2]}${d[6]}0000${d[3]}${d[4]}${d[5]}`;
+      break;
+    case 3:
+      // MFG: M1 M2 M3, PROD: 00000 R4
+      upcaBody = `${numberSystem}${d[1]}${d[2]}${d[3]}00000${d[4]}`;
+      break;
+    case 4:
+      // MFG: M1 M2 M3 M4, PROD: 00000 R5
+      upcaBody = `${numberSystem}${d[1]}${d[2]}${d[3]}${d[4]}00000${d[5]}`;
+      break;
+    default:
+      // 5-9: MFG: M1 M2 M3 M4 M5, PROD: 0000 R6
+      upcaBody = `${numberSystem}${d[1]}${d[2]}${d[3]}${d[4]}${d[5]}0000${d[6]}`;
+  }
+  // calculate UPC-A checksum
+  const digits = upcaBody.split('').map(Number);
+  let sum = 0;
+  for (let i = 0; i < 11; i++) sum += digits[i] * (i % 2 === 0 ? 3 : 1);
+  const check = (10 - (sum % 10)) % 10;
+  if (check !== checkDigit) return null;
+  return `${upcaBody}${check}`; // 12-digit UPC-A
+}
+
+function isValidUPCE(code: string): boolean {
+  const upca = expandUPCEtoUPCA(code);
+  return !!upca; // expansion verified checksum
+}
+
+function isValidITF14(code: string): boolean {
+  if (!/^\d{14}$/.test(code)) return false;
+  const d = code.split('').map(Number);
+  let sum = 0; // same mod-10 scheme as EAN-13 over first 13 digits
+  for (let i = 0; i < 13; i++) sum += d[i] * (i % 2 ? 3 : 1);
+  const check = (10 - (sum % 10)) % 10;
+  return check === d[13];
+}
+
+// Normalize scanned payload to a canonical GTIN string we store/use.
+function normalizeToGtin(raw: string): string | null {
+  const data = (raw || '').trim();
+  if (!data) return null;
+  // Pure numeric? Try the standard GTIN forms.
+  if (/^\d+$/.test(data)) {
+    if (data.length === 8 && isValidEAN8(data)) return data;           // GTIN-8
+    if (data.length === 12 && isValidUPCA(data)) return `0${data}`;    // UPC-A -> GTIN-13
+    if (data.length === 13 && isValidEAN13(data)) return data;         // GTIN-13
+    if (data.length === 14 && isValidITF14(data)) return data;         // GTIN-14
+  }
+  // UPC-E (8) encoded sometimes reported as payload w/ checksum
+  if (/^\d{8}$/.test(data) && isValidUPCE(data)) {
+    const upca = expandUPCEtoUPCA(data)!; // checked by isValidUPCE
+    return `0${upca}`.slice(0, 13); // UPC-A -> GTIN-13
+  }
+  // Some 1D symbologies (Code128/39/93) may carry a GTIN as digits; if so, try to parse
+  const digits = data.replace(/\D+/g, '');
+  if (digits) {
+    const n = normalizeToGtin(digits);
+    if (n) return n;
+  }
+  return null; // unsupported payload
 }
 
 export default function BarcodeScanner() {
@@ -58,7 +151,7 @@ export default function BarcodeScanner() {
 
   // rolling buffer to tally codes within a short window
   const bufferRef = useRef<{
-    counts: Record<string, number>;
+    counts: Record<string, number>; // keyed by normalized GTIN
     firstTs: number;
   }>({ counts: {}, firstTs: 0 });
 
@@ -78,8 +171,8 @@ export default function BarcodeScanner() {
   };
 
   const maybeConfirm = (raw: string) => {
-    const code = (raw || '').trim();
-    if (!looksLikeSupportedEAN(code)) return null;
+    const gtin = normalizeToGtin(raw);
+    if (!gtin) return null; // ignore unsupported/invalid payloads
 
     const now = Date.now();
     const buf = bufferRef.current;
@@ -90,10 +183,10 @@ export default function BarcodeScanner() {
       buf.counts = {};
     }
 
-    buf.counts[code] = (buf.counts[code] || 0) + 1;
-    if (buf.counts[code] >= SCAN_CONFIRMATIONS) {
+    buf.counts[gtin] = (buf.counts[gtin] || 0) + 1;
+    if (buf.counts[gtin] >= SCAN_CONFIRMATIONS) {
       resetBuffer();
-      return code;
+      return gtin;
     }
 
     setConfirming(true);
@@ -109,7 +202,7 @@ export default function BarcodeScanner() {
     const confirmed = maybeConfirm(data);
     if (!confirmed) return;
 
-    // we have a confirmed + checksummed EAN
+    // we have a confirmed + normalized GTIN
     setScanning(false);
     setConfirming(false);
     setLoading(true);
@@ -160,7 +253,18 @@ export default function BarcodeScanner() {
               <CameraView
                 style={StyleSheet.absoluteFill}
                 onBarcodeScanned={scanning ? handleBarcodeScanned : undefined}
-                barcodeScannerSettings={{ barcodeTypes: ['ean8', 'ean13'] }}
+                barcodeScannerSettings={{
+                  barcodeTypes: [
+                    'ean8',
+                    'ean13',
+                    'upc_a',
+                    'upc_e',
+                    'itf14',
+                    'code128',
+                    'code39',
+                    'code93',
+                  ],
+                }}
               />
             )}
           </View>
@@ -169,7 +273,7 @@ export default function BarcodeScanner() {
           <View className="absolute inset-0 justify-center items-center pointer-events-none">
             <View className="w-[70%] h-48 border-4 border-white rounded-xl bg-white/10 justify-center items-center">
               <Text className="text-white font-bold text-base text-center px-4">
-                Align barcode here
+                Align barcode here (EAN/UPC/ITF/Code128/39)
               </Text>
             </View>
           </View>
